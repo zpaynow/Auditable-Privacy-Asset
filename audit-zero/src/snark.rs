@@ -119,8 +119,27 @@ pub fn verify(vk: &VerifyingKey, utxo: &Utxo, proof: &Proof) -> crate::Result<()
 mod tests {
     use super::*;
     use crate::{MemoryStorage, MerkleTree};
+    use ark_serialize::CanonicalSerialize;
     use ark_std::{UniformRand, rand::SeedableRng};
     use rand_chacha::ChaCha20Rng;
+
+    #[test]
+    fn test_different_cs_size() {
+        let rng = &mut ChaCha20Rng::from_seed([43u8; 32]);
+
+        for (i, o) in [(2, 1), (1, 2), (1, 3), (2, 3)] {
+            let (pk, vk) = setup(i, o, rng).unwrap();
+            let mut pk_bytes = vec![];
+            pk.serialize_compressed(&mut pk_bytes).unwrap();
+            let mut vk_bytes = vec![];
+            vk.serialize_compressed(&mut vk_bytes).unwrap();
+            println!(
+                "{i}-{o}: pk: {} MB - vk: {}",
+                pk_bytes.len() / 1024 / 1024,
+                vk_bytes.len()
+            );
+        }
+    }
 
     #[test]
     fn test_groth16_prove_verify() {

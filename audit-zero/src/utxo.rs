@@ -1,9 +1,8 @@
 use crate::{
-    Keypair, MTProof, OpenCommitment, commitment::commitment_gadget,
+    Keypair, MTProof, OpenCommitment, commitment::commitment_gadget, keys::keypair_gadget,
     merkle_tree::merkle_proof_gadget, nullifier::nullifier_gadget,
 };
 use ark_bn254::Fr;
-use ark_ff::{BigInteger, PrimeField};
 use ark_r1cs_std::{
     alloc::AllocVar,
     boolean::Boolean,
@@ -91,14 +90,15 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
         let merkle_root_var = FpVar::new_input(cs.clone(), || Ok(utxo.merkle_root))?;
 
         // Allocate private witness data
-        let sk_bytes = self.keypair.secret.into_bigint().to_bytes_le();
-        let sk_fr = Fr::from_le_bytes_mod_order(&sk_bytes);
+        let sk_fr = self.keypair.secret_to_fq();
+        let sk_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(sk_fr))?;
 
-        let sk_var = FpVar::new_witness(cs.clone(), || Ok(sk_fr))?;
-        let pk_x_var = FpVar::new_witness(cs.clone(), || Ok(self.keypair.public.x))?;
-        let pk_y_var = FpVar::new_witness(cs.clone(), || Ok(self.keypair.public.y))?;
+        // Public key coordinates in their native Fq field for keypair proof
+        let pk_x_fq_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.keypair.public.x))?;
+        let pk_y_fq_var = FpVar::<Fr>::new_witness(cs.clone(), || Ok(self.keypair.public.y))?;
 
-        // TODO sk * G = PK
+        // Prove keypair relationship: pk = sk * G
+        keypair_gadget(&sk_var, &pk_x_fq_var, &pk_y_fq_var)?;
 
         // Track asset balances
         let mut asset_balances: HashMap<u64, (FpVar<Fr>, FpVar<Fr>)> = HashMap::new();
@@ -112,36 +112,23 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
             let asset_var = FpVar::new_witness(cs.clone(), || Ok(Fr::from(comm.asset)))?;
             let amount_var = FpVar::new_witness(cs.clone(), || Ok(Fr::from(comm.amount)))?;
             let blind_var = FpVar::new_witness(cs.clone(), || Ok(comm.blind))?;
-            let owner_x_var = FpVar::new_witness(cs.clone(), || Ok(comm.owner.x))?;
-            let owner_y_var = FpVar::new_witness(cs.clone(), || Ok(comm.owner.y))?;
 
             // 2. Verify commitment correctness
             let computed_commitment = commitment_gadget(
                 &asset_var,
                 &amount_var,
                 &blind_var,
-                &owner_x_var,
-                &owner_y_var,
+                &pk_x_fq_var,
+                &pk_y_fq_var,
             )?;
 
-            // 3. Verify ownership (owner must be the keypair)
-            owner_x_var.enforce_equal(&pk_x_var)?;
-            owner_y_var.enforce_equal(&pk_y_var)?;
-
-            // 4. Compute and verify nullifier
-            let computed_nullifier = nullifier_gadget(
-                &computed_commitment,
-                &asset_var,
-                &amount_var,
-                &pk_x_var,
-                &pk_y_var,
-                &sk_var,
-            )?;
+            // 3. Compute and verify nullifier
+            let computed_nullifier = nullifier_gadget(&computed_commitment, &sk_var)?;
 
             // Verify nullifier matches public input
             computed_nullifier.enforce_equal(&nullifiers_vars[i])?;
 
-            // 5. Verify Merkle tree membership
+            // Verify Merkle tree membership
             let commitment_hash = comm.commit();
             let leaf_var = FpVar::new_witness(cs.clone(), || Ok(commitment_hash))?;
 

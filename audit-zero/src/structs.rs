@@ -4,7 +4,7 @@ use crate::{
     storage::*,
 };
 use ark_bn254::Fr;
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::PrimeField;
 use ark_std::{Zero, collections::HashMap};
 
 pub type Asset = u64;
@@ -47,21 +47,7 @@ impl OpenCommitment {
     }
 
     pub fn nullify(&self, keypair: &Keypair) -> Nullifier {
-        let comm = self.commit();
-
-        let bytes = keypair.secret.into_bigint().to_bytes_le();
-        let sk = Fr::from_le_bytes_mod_order(&bytes); // TODO splite two
-
-        let inputs = [
-            comm,
-            Fr::from(self.asset),
-            Fr::from(self.amount),
-            keypair.public.x,
-            keypair.public.y,
-            sk,
-        ];
-
-        poseidon_hash(&inputs)
+        poseidon_hash(&[self.commit(), keypair.secret_to_fq()])
     }
 }
 
