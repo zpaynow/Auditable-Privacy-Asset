@@ -1,9 +1,8 @@
-[package]
-name = "audit-zero"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [ "payment", "aggregator", "auditor"]
+resolver = "2"
 
-[dependencies]
+[workspace.dependencies]
 aes-gcm = "0.10"
 ark-ff = "0.5"
 ark-ec = "0.5"

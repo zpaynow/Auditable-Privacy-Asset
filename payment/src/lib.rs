@@ -1,4 +1,3 @@
-mod audit;
 mod commitment;
 mod memo;
 mod merkle_tree;

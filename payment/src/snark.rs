@@ -107,15 +107,26 @@ mod tests {
     #[test]
     fn test_different_cs_size() {
         let rng = &mut ChaCha20Rng::from_seed([43u8; 32]);
-
+        // 2-1: cs_size: 34743, public_inputs: 4, pk: 7 MB - vk: 392 B merge outputs
+        // 1-2: cs_size: 21162, public_inputs: 4, pk: 4 MB - vk: 392 B pay no gas
+        // 1-3: cs_size: 23104, public_inputs: 5, pk: 4 MB - vk: 424 B pay with gas
+        // 2-3: cs_size: 38627, public_inputs: 6, pk: 7 MB - vk: 456 B multiple usages
         for (i, o) in [(2, 1), (1, 2), (1, 3), (2, 3)] {
             let (pk, vk) = setup(i, o, rng).unwrap();
             let mut pk_bytes = vec![];
             pk.serialize_compressed(&mut pk_bytes).unwrap();
             let mut vk_bytes = vec![];
             vk.serialize_compressed(&mut vk_bytes).unwrap();
+
+            // The constraint system size can be determined from the a_query length
+            // a_query contains elements for all constraints and witnesses
+            let cs_size = pk.a_query.len();
+            let num_public_inputs = pk.vk.gamma_abc_g1.len() - 1;
+
             println!(
-                "{i}-{o}: pk: {} MB - vk: {}",
+                "{i}-{o}: cs_size: {}, public_inputs: {}, pk: {} MB - vk: {} B",
+                cs_size,
+                num_public_inputs,
                 pk_bytes.len() / 1024 / 1024,
                 vk_bytes.len()
             );
