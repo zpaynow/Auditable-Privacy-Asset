@@ -1,11 +1,16 @@
 use crate::{
-    Keypair, PublicKey, Result,
+    AzError, Keypair, PublicKey, Result,
+    memo::{hybrid_decrypt, hybrid_encrypt},
     poseidon::{poseidon_hash, poseidon_merge_hash},
     storage::*,
 };
 use ark_bn254::Fr;
-use ark_ff::PrimeField;
-use ark_std::{Zero, collections::HashMap};
+use ark_ff::{BigInteger, PrimeField};
+use ark_std::{
+    UniformRand, Zero,
+    collections::HashMap,
+    rand::{CryptoRng, Rng},
+};
 
 pub type Asset = u64;
 
@@ -27,13 +32,24 @@ pub struct OpenCommitment {
     pub owner: PublicKey,
     /// blind
     pub blind: Blind,
-    /// memo for owner
-    pub memo: Option<OpenMemo>,
-    /// audit for auditor
-    pub audit: Option<OpenAudit>,
 }
 
 impl OpenCommitment {
+    pub fn generate<R: CryptoRng + Rng>(
+        prng: &mut R,
+        asset: Asset,
+        amount: Amount,
+        owner: PublicKey,
+    ) -> Self {
+        let blind = Fr::rand(prng);
+        Self {
+            asset,
+            amount,
+            owner,
+            blind,
+        }
+    }
+
     pub fn commit(&self) -> Commitment {
         let inputs = [
             Fr::from(self.asset),
@@ -49,19 +65,47 @@ impl OpenCommitment {
     pub fn nullify(&self, keypair: &Keypair) -> Nullifier {
         poseidon_hash(&[self.commit(), keypair.secret_to_fq()])
     }
-}
 
-#[derive(Clone)]
-pub struct OpenMemo {
-    pub asset: Asset,
-    pub amount: Amount,
-}
+    /// encrypt the memo for receiver
+    pub fn encrypt<R: CryptoRng + Rng>(&self, prng: &mut R) -> Result<Vec<u8>> {
+        let mut ptext = vec![];
+        ptext.extend(self.asset.to_le_bytes());
+        ptext.extend(self.amount.to_le_bytes());
+        ptext.extend(self.blind.into_bigint().to_bytes_le());
 
-#[derive(Clone)]
-pub struct OpenAudit {
-    pub asset: Asset,
-    // TODO only show the amount range
-    pub amount: Amount,
+        hybrid_encrypt(prng, &self.owner, &ptext)
+    }
+
+    /// decrypt the memo by receiver
+    pub fn decrypt(keypair: &Keypair, comm: &Commitment, bytes: &[u8]) -> Result<Self> {
+        let ptext = hybrid_decrypt(keypair, bytes)?;
+        if ptext.len() < 32 {
+            return Err(AzError::Decryption);
+        }
+
+        let mut asset_bytes = [0u8; 8];
+        asset_bytes.copy_from_slice(&ptext[..8]);
+        let asset = Asset::from_le_bytes(asset_bytes);
+
+        let mut amount_bytes = [0u8; 16];
+        amount_bytes.copy_from_slice(&ptext[8..24]);
+        let amount = Amount::from_le_bytes(amount_bytes);
+
+        let blind = Blind::from_le_bytes_mod_order(&ptext[24..]);
+
+        let open_comm = OpenCommitment {
+            asset,
+            amount,
+            blind,
+            owner: keypair.public,
+        };
+
+        if &open_comm.commit() != comm {
+            return Err(AzError::Decryption);
+        }
+
+        Ok(open_comm)
+    }
 }
 
 // 2^20 = 1048576, parallel max version 2^20 = 1048576, max ledgers 2^24 = 16777216
@@ -328,11 +372,13 @@ fn simple_u32_to_fr(i: u32) -> Fr {
 mod tests {
     use super::*;
     use crate::storage::MemoryStorage;
-    use ark_std::{UniformRand, test_rng};
+    use ark_std::rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_merkle_tree() {
-        let rng = &mut test_rng();
+        let rng = &mut ChaCha20Rng::from_seed([1u8; 32]);
+
         let storage = MemoryStorage::default();
         let mut merkle = MerkleTree::new(0, storage).unwrap();
 
@@ -349,5 +395,23 @@ mod tests {
 
         let proof3 = merkle.generate_proof(9).unwrap();
         assert!(proof3.verify());
+    }
+
+    #[test]
+    fn test_memo() {
+        let rng = &mut ChaCha20Rng::from_seed([2u8; 32]);
+
+        let keypair = Keypair::generate(rng);
+        let asset = 1;
+        let amount = 100;
+
+        let open_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
+        let comm = open_comm.commit();
+        let memo = open_comm.encrypt(rng).unwrap();
+
+        let open_comm2 = OpenCommitment::decrypt(&keypair, &comm, &memo).unwrap();
+        assert_eq!(open_comm.asset, open_comm2.asset);
+        assert_eq!(open_comm.amount, open_comm2.amount);
+        assert_eq!(open_comm.blind, open_comm2.blind);
     }
 }

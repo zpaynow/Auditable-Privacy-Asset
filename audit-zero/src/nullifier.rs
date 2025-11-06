@@ -16,27 +16,20 @@ mod tests {
     use ark_ff::PrimeField;
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::{UniformRand, rand::SeedableRng};
+    use ark_std::rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     #[test]
     fn test_nullifier_gadget() {
         let rng = &mut ChaCha20Rng::from_seed([42u8; 32]);
         let cs = ConstraintSystem::<Fr>::new_ref();
+        let keypair = Keypair::generate(rng);
 
         // Create test data
         let asset = 1u64;
         let amount = 100u128;
 
-        let keypair = Keypair::generate(rng);
-        let open_comm = OpenCommitment {
-            asset,
-            amount,
-            blind: Fr::rand(rng),
-            owner: keypair.public.clone(),
-            memo: None,
-            audit: None,
-        };
+        let open_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
         let comm = open_comm.commit();
 
         // Compute native nullifier

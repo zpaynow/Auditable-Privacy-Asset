@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+aes-gcm = "0.10"
 ark-ff = "0.5"
 ark-ec = "0.5"
 ark-std = "0.5"
@@ -15,3 +16,4 @@ ark-r1cs-std = "0.5"
 ark-crypto-primitives = { version = "0.5", features = ["crh", "r1cs"] }
 ark-groth16 = "0.5"
 rand_chacha = "0.3"
+sha2 = "0.10"

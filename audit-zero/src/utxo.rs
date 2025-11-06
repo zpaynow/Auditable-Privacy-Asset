@@ -10,7 +10,10 @@ use ark_r1cs_std::{
     fields::{FieldVar, fp::FpVar},
 };
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_std::collections::HashMap;
+use ark_std::{
+    collections::HashMap,
+    rand::{CryptoRng, Rng},
+};
 
 /// UTXO transaction circuit
 /// Proves correct spending of inputs and creation of outputs with privacy
@@ -26,13 +29,14 @@ pub struct UtxoCircuit {
 pub struct Utxo {
     pub nullifiers: Vec<Fr>,
     pub commitments: Vec<Fr>,
+    pub memos: Vec<Vec<u8>>,
     pub merkle_version: u32,
     pub merkle_root: Fr,
 }
 
 impl UtxoCircuit {
-    /// generate public inputs
-    pub fn publics(&self) -> Utxo {
+    /// generate public used utxo
+    pub fn utxo<R: CryptoRng + Rng>(&self, prng: &mut R) -> crate::Result<Utxo> {
         assert!(!self.inputs.is_empty());
 
         let nullifiers = self
@@ -45,14 +49,48 @@ impl UtxoCircuit {
             .iter()
             .map(|output| output.commitment.commit())
             .collect();
+
+        let mut memos = vec![];
+        for output in self.outputs.iter() {
+            memos.push(output.commitment.encrypt(prng)?);
+        }
+
+        let merkle_version = self.inputs[0].merkle_proof.version;
+        let merkle_root = self.inputs[0].merkle_proof.root;
+
+        Ok(Utxo {
+            nullifiers,
+            commitments,
+            memos,
+            merkle_version,
+            merkle_root,
+        })
+    }
+
+    /// generate public inputs
+    pub(crate) fn publics(&self) -> Utxo {
+        assert!(!self.inputs.is_empty());
+
+        let nullifiers = self
+            .inputs
+            .iter()
+            .map(|input| input.commitment.nullify(&self.keypair))
+            .collect();
+        let commitments = self
+            .outputs
+            .iter()
+            .map(|output| output.commitment.commit())
+            .collect();
+
         let merkle_version = self.inputs[0].merkle_proof.version;
         let merkle_root = self.inputs[0].merkle_proof.root;
 
         Utxo {
             nullifiers,
             commitments,
-            merkle_version,
             merkle_root,
+            merkle_version,
+            memos: vec![],
         }
     }
 }
@@ -199,7 +237,7 @@ mod tests {
     use super::*;
     use crate::{MemoryStorage, MerkleTree};
     use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
-    use ark_std::{UniformRand, rand::SeedableRng};
+    use ark_std::rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     #[test]
@@ -208,21 +246,15 @@ mod tests {
 
         // Create keypair
         let keypair = Keypair::generate(rng);
+        let asset = 1;
+        let amount = 100;
 
         // Create a merkle tree
         let storage = MemoryStorage::default();
         let mut merkle = MerkleTree::new(0, storage).unwrap();
 
         // Create input UTXO
-        let input_blind = Fr::rand(rng);
-        let input_comm = OpenCommitment {
-            asset: 1,
-            amount: 100,
-            owner: keypair.public,
-            blind: input_blind,
-            memo: None,
-            audit: None,
-        };
+        let input_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
 
         // Add to merkle tree
         let commitment_hash = input_comm.commit();
@@ -231,15 +263,7 @@ mod tests {
         let merkle_proof = merkle.generate_proof(index).unwrap();
 
         // Create output UTXO (same amount, different blind)
-        let output_blind = Fr::rand(rng);
-        let output_comm = OpenCommitment {
-            asset: 1,
-            amount: 100,
-            owner: keypair.public,
-            blind: output_blind,
-            memo: None,
-            audit: None,
-        };
+        let output_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
 
         // Create circuit
         let circuit = UtxoCircuit {

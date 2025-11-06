@@ -29,7 +29,7 @@ mod tests {
     use crate::{Keypair, OpenCommitment};
     use ark_r1cs_std::{R1CSVar, alloc::AllocVar};
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::{UniformRand, rand::SeedableRng};
+    use ark_std::rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     #[test]
@@ -37,29 +37,21 @@ mod tests {
         let rng = &mut ChaCha20Rng::from_seed([42u8; 32]);
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        // Create test data
-        let asset = 1u64;
-        let amount = 100u128;
-        let blind = Fr::rand(rng);
-
         // Create a random point for owner
         let keypair = Keypair::generate(rng);
 
+        // Create test data
+        let asset = 1u64;
+        let amount = 100u128;
+
         // Compute native commitment
-        let open_comm = OpenCommitment {
-            asset,
-            amount,
-            blind,
-            owner: keypair.public,
-            memo: None,
-            audit: None,
-        };
+        let open_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
         let expected = open_comm.commit();
 
         // Circuit computation
         let asset_var = FpVar::new_witness(cs.clone(), || Ok(Fr::from(asset))).unwrap();
         let amount_var = FpVar::new_witness(cs.clone(), || Ok(Fr::from(amount))).unwrap();
-        let blind_var = FpVar::new_witness(cs.clone(), || Ok(blind)).unwrap();
+        let blind_var = FpVar::new_witness(cs.clone(), || Ok(open_comm.blind)).unwrap();
         let owner_x_var = FpVar::new_witness(cs.clone(), || Ok(keypair.public.x)).unwrap();
         let owner_y_var = FpVar::new_witness(cs.clone(), || Ok(keypair.public.y)).unwrap();
 

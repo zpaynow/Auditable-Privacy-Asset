@@ -2,12 +2,15 @@ use ark_bn254::Fr;
 use ark_crypto_primitives::{
     crh::{
         CRHScheme, CRHSchemeGadget, TwoToOneCRHScheme, TwoToOneCRHSchemeGadget,
-        poseidon::{CRH, TwoToOneCRH},
+        poseidon::{
+            CRH, TwoToOneCRH,
+            constraints::{CRHGadget, CRHParametersVar},
+        },
     },
     sponge::poseidon::PoseidonConfig,
 };
 use ark_ff::BigInt;
-use ark_r1cs_std::{R1CSVar, fields::fp::FpVar};
+use ark_r1cs_std::{R1CSVar, alloc::AllocVar, fields::fp::FpVar};
 use ark_relations::r1cs::SynthesisError;
 
 /// use common CRH poseidon hash for params
@@ -46,9 +49,6 @@ pub fn poseidon_merge_hash(left: Fr, right: Fr) -> Fr {
 
 /// Circuit version: Poseidon hash gadget for R1CS constraints
 pub fn poseidon_hash_gadget(inputs: &[FpVar<Fr>]) -> Result<FpVar<Fr>, SynthesisError> {
-    use ark_crypto_primitives::crh::poseidon::constraints::{CRHGadget, CRHParametersVar};
-    use ark_r1cs_std::alloc::AllocVar;
-
     let ark = ROUND_CONSTANTS.iter().map(|v| v.to_vec()).collect();
     let mds = MDS.iter().map(|v| v.to_vec()).collect();
 

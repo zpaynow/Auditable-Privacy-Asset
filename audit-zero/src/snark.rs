@@ -2,10 +2,7 @@ use crate::{AzError, Keypair, MTNode, MTProof, OpenCommitment, TREE_DEPTH};
 use ark_bn254::{Bn254, Fr};
 use ark_crypto_primitives::snark::SNARK;
 use ark_groth16::Groth16;
-use ark_std::{
-    UniformRand,
-    rand::{CryptoRng, Rng},
-};
+use ark_std::rand::{CryptoRng, Rng};
 
 pub use crate::utxo::{Utxo, UtxoCircuit, UtxoInput, UtxoOutput};
 
@@ -32,15 +29,7 @@ pub fn setup<R: Rng + CryptoRng>(
 
     let mut inputs = vec![];
     for _ in 0..num_inputs {
-        let blind = Fr::rand(rng);
-        let commitment = OpenCommitment {
-            asset: 0,
-            amount: 0,
-            owner: keypair.public.clone(),
-            blind,
-            memo: None,
-            audit: None,
-        };
+        let commitment = OpenCommitment::generate(rng, 0, 0, keypair.public);
 
         let mut nodes = vec![];
         for _ in 0..TREE_DEPTH {
@@ -66,15 +55,7 @@ pub fn setup<R: Rng + CryptoRng>(
 
     let mut outputs = vec![];
     for _ in 0..num_outputs {
-        let blind = Fr::rand(rng);
-        let commitment = OpenCommitment {
-            asset: 0,
-            amount: 0,
-            owner: keypair.public.clone(),
-            blind,
-            memo: None,
-            audit: None,
-        };
+        let commitment = OpenCommitment::generate(rng, 0, 0, keypair.public);
 
         outputs.push(UtxoOutput { commitment });
     }
@@ -120,7 +101,7 @@ mod tests {
     use super::*;
     use crate::{MemoryStorage, MerkleTree};
     use ark_serialize::CanonicalSerialize;
-    use ark_std::{UniformRand, rand::SeedableRng};
+    use ark_std::rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
     #[test]
@@ -147,6 +128,8 @@ mod tests {
 
         // Create keypair
         let keypair = Keypair::generate(rng);
+        let asset = 1;
+        let amount = 100;
 
         // Create a merkle tree
         let storage = MemoryStorage::default();
@@ -155,15 +138,7 @@ mod tests {
         // Create input UTXO
         let mut comm_inputs = vec![];
         for _ in 0..3 {
-            let input_blind = Fr::rand(rng);
-            let input_comm = OpenCommitment {
-                asset: 1,
-                amount: 100,
-                owner: keypair.public,
-                blind: input_blind,
-                memo: None,
-                audit: None,
-            };
+            let input_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
 
             // Add to merkle tree
             let index = merkle.add_leaf(input_comm.commit()).unwrap();
@@ -184,15 +159,7 @@ mod tests {
         // Create output UTXO
         let mut outputs = vec![];
         for _ in 0..3 {
-            let output_blind = Fr::rand(rng);
-            let commitment = OpenCommitment {
-                asset: 1,
-                amount: 100,
-                owner: keypair.public,
-                blind: output_blind,
-                memo: None,
-                audit: None,
-            };
+            let commitment = OpenCommitment::generate(rng, asset, amount, keypair.public);
             outputs.push(UtxoOutput { commitment });
         }
 

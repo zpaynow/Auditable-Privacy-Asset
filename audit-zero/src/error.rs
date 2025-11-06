@@ -11,4 +11,6 @@ pub enum AzError {
     Groth16Setup,
     Groth16Prove,
     Groth16Verify,
+    Encryption,
+    Decryption,
 }
