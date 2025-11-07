@@ -276,10 +276,24 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
             // Prove encryption for each output
             for (i, output) in self.outputs.iter().enumerate() {
                 let comm = &output.commitment;
+                let memo_bytes = &audit.memos[i];
 
                 // Get the ephemeral secret for this output
                 let ephemeral_secret = audit.shares[i];
                 let ephemeral_sk_var = FpVar::new_witness(cs.clone(), || Ok(ephemeral_secret))?;
+
+                // Public key coordinates in their native Fq field for keypair proof
+                let ephemeral_pk_x = Fr::deserialize_compressed(&memo_bytes[..32])
+                    .map_err(|_| SynthesisError::Unsatisfiable)?;
+                let ephemeral_pk_y = Fr::deserialize_compressed(&memo_bytes[32..64])
+                    .map_err(|_| SynthesisError::Unsatisfiable)?;
+                let ephemeral_pk_x_var =
+                    FpVar::<Fr>::new_witness(cs.clone(), || Ok(ephemeral_pk_x))?;
+                let ephemeral_pk_y_var =
+                    FpVar::<Fr>::new_witness(cs.clone(), || Ok(ephemeral_pk_y))?;
+
+                // Prove keypair relationship: pk = sk * G
+                keypair_gadget(&ephemeral_sk_var, &ephemeral_pk_x_var, &ephemeral_pk_y_var)?;
 
                 // Allocate output fields
                 let asset_var = FpVar::new_witness(cs.clone(), || Ok(Fr::from(comm.asset)))?;
@@ -292,11 +306,10 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
                 let nullifier_var = FpVar::new_witness(cs.clone(), || Ok(nullifier))?;
 
                 // Extract ciphertexts from memo bytes
-                // Format: ephemeral_pk (32 bytes) || ciphertexts (4 × 32 bytes)
+                // Format: ephemeral_pk (64 bytes) || ciphertexts (4 × 32 bytes)
                 // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
                 let mut expected_ciphertexts = Vec::new();
-                let memo_bytes = &audit.memos[i];
-                for bytes in memo_bytes[32..].chunks(32) {
+                for bytes in memo_bytes[64..].chunks(32) {
                     // skip pk
                     let ct = Fr::deserialize_compressed(bytes)
                         .map_err(|_| SynthesisError::Unsatisfiable)?;

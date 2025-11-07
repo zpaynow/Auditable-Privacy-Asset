@@ -63,10 +63,10 @@ pub fn setup<R: Rng + CryptoRng>(
     }
 
     let audit = if is_audit {
-        // Field-element encryption format: ephemeral_pk (32 bytes) + ciphertexts (4 × 32 bytes)
+        // Field-element encryption format: ephemeral_pk (64 bytes) + ciphertexts (4 × 32 bytes)
         // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
         // asset and amount are packed together: asset * 2^128 + amount
-        let memos = vec![vec![0u8; 160]; num_outputs]; // 32 + 4*32 = 160 bytes
+        let memos = vec![vec![0u8; 192]; num_outputs]; // 64 + 4*32 = 192 bytes
         let shares = vec![Fr::from(0u64); num_outputs];
         Some(AuditCircuit {
             auditor: keypair.public,
@@ -110,7 +110,7 @@ pub fn verify(vk: &VerifyingKey, utxo: &Utxo, proof: &Proof) -> crate::Result<()
         publics.push(audit.auditor.y);
 
         for memo_bytes in &audit.memos {
-            for bytes in memo_bytes[32..].chunks(32) {
+            for bytes in memo_bytes[64..].chunks(32) {
                 // skip first pk
                 let ct = Fr::deserialize_compressed(bytes).map_err(|_| AzError::Groth16Verify)?;
                 publics.push(ct);
