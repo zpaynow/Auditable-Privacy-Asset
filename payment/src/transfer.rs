@@ -84,8 +84,8 @@ pub fn setup<R: Rng + CryptoRng>(
         audit,
     };
 
-    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(dummy_circuit, rng).unwrap();
-    // .map_err(|_e| AzError::Groth16Setup)?;
+    let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(dummy_circuit, rng)
+        .map_err(|_e| AzError::Groth16Setup)?;
 
     Ok((pk, vk))
 }
