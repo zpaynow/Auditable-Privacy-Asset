@@ -72,7 +72,7 @@ pub fn pack_asset_amount_gadget(
     Ok(packed)
 }
 
-/// Packs field elements from inputs (asset_amount_packed, owner, nullifier)
+/// Packs field elements from inputs (asset_amount_packed, owner)
 ///
 /// # Constraints
 /// - Negligible (just organization of existing variables)
@@ -80,15 +80,13 @@ pub fn pack_audit_plaintext_gadget(
     asset_amount_packed: &FpVar<Fr>,
     owner_x: &FpVar<Fr>,
     owner_y: &FpVar<Fr>,
-    nullifier: &FpVar<Fr>,
 ) -> Result<Vec<FpVar<Fr>>, SynthesisError> {
-    // For audit, we encrypt: asset_amount_packed (1 Fr) | owner (2 Fr) | nullifier (1 Fr)
-    // Total: 4 field elements
+    // For audit, we encrypt: asset_amount_packed (1 Fr) | owner (2 Fr)
+    // Total: 3 field elements
     Ok(vec![
         asset_amount_packed.clone(),
         owner_x.clone(),
         owner_y.clone(),
-        nullifier.clone(),
     ])
 }
 
@@ -126,7 +124,7 @@ pub fn poseidon_stream_cipher_gadget(
 /// 1. ECDH: shared = auditor_pk * ephemeral_sk
 /// 2. Key derivation: key = Poseidon(shared_x, shared_y)
 /// 3. Pack asset+amount: asset_amount = asset * 2^128 + amount
-/// 4. Pack plaintext: [asset_amount, owner_x, owner_y, nullifier]
+/// 4. Pack plaintext: [asset_amount, owner_x, owner_y]
 /// 5. Encrypt: ciphertext[i] = plaintext[i] + Poseidon(key, 0, i)
 ///
 /// # Arguments
@@ -137,16 +135,15 @@ pub fn poseidon_stream_cipher_gadget(
 /// * `amount` - Amount (witness)
 /// * `owner_x` - Owner public key X (witness)
 /// * `owner_y` - Owner public key Y (witness)
-/// * `nullifier` - Nullifier (witness, already proven elsewhere)
-/// * `expected_ciphertexts` - Expected ciphertext field elements to verify against (4 elements)
+/// * `expected_ciphertexts` - Expected ciphertext field elements to verify against (3 elements)
 ///
 /// # Constraints
 /// - ECDH: ~2500-3000 constraints
 /// - Key derivation: ~150-200 constraints
 /// - Asset+amount packing: ~1 constraint
-/// - Stream cipher (4 blocks): ~600-800 constraints
-/// - Equality checks: ~4 constraints
-/// - **Total: ~3300-4000 constraints per output** (savings from 4 vs 5 blocks!)
+/// - Stream cipher (3 blocks): ~450-600 constraints
+/// - Equality checks: ~3 constraints
+/// - **Total: ~3100-3800 constraints per output**
 pub fn audit_encrypt_gadget(
     ephemeral_sk: &FpVar<Fr>,
     auditor_pk_x: &FpVar<Fr>,
@@ -155,7 +152,6 @@ pub fn audit_encrypt_gadget(
     amount: &FpVar<Fr>,
     owner_x: &FpVar<Fr>,
     owner_y: &FpVar<Fr>,
-    nullifier: &FpVar<Fr>,
     expected_ciphertexts: &[FpVar<Fr>],
 ) -> Result<(), SynthesisError> {
     let cs = ephemeral_sk.cs();
@@ -169,9 +165,8 @@ pub fn audit_encrypt_gadget(
     // 3. Pack asset and amount into single field element
     let asset_amount_packed = pack_asset_amount_gadget(asset, amount)?;
 
-    // 4. Pack plaintext into field elements (4 elements now)
-    let plaintexts =
-        pack_audit_plaintext_gadget(&asset_amount_packed, owner_x, owner_y, nullifier)?;
+    // 4. Pack plaintext into field elements (3 elements now)
+    let plaintexts = pack_audit_plaintext_gadget(&asset_amount_packed, owner_x, owner_y)?;
 
     // 5. Encrypt using Poseidon stream cipher
     let nonce = FpVar::new_constant(cs, Fr::from(0u64))?;

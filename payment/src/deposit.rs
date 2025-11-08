@@ -17,7 +17,6 @@ use ark_std::rand::{CryptoRng, Rng};
 /// Proves correct spending of inputs and creation of outputs with privacy
 #[derive(Clone)]
 pub struct DepositCircuit {
-    pub keypair: Keypair,
     pub asset: Asset,
     pub amount: Amount,
     pub output: OpenCommitment,
@@ -129,7 +128,6 @@ impl ConstraintSynthesizer<Fr> for DepositCircuit {
             let auditor_pk_y_var = FpVar::new_input(cs.clone(), || Ok(audit.auditor.y))?;
 
             // Prove encryption for output
-            let comm = &self.output;
             let memo_bytes = &audit.memo;
             let ephemeral_secret = audit.share;
 
@@ -147,13 +145,9 @@ impl ConstraintSynthesizer<Fr> for DepositCircuit {
             // Prove keypair relationship: pk = sk * G
             keypair_gadget(&ephemeral_sk_var, &ephemeral_pk_x_var, &ephemeral_pk_y_var)?;
 
-            // Compute nullifier for this output
-            let nullifier = comm.nullify(&self.keypair);
-            let nullifier_var = FpVar::new_witness(cs.clone(), || Ok(nullifier))?;
-
             // Extract ciphertexts from memo bytes
-            // Format: ephemeral_pk (64 bytes) || ciphertexts (4 × 32 bytes)
-            // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+            // Format: ephemeral_pk (64 bytes) || ciphertexts (3 × 32 bytes)
+            // 3 field elements: [asset_amount_packed, owner_x, owner_y]
             let mut expected_ciphertexts = Vec::new();
             for bytes in memo_bytes[64..].chunks(32) {
                 // skip pk
@@ -172,7 +166,6 @@ impl ConstraintSynthesizer<Fr> for DepositCircuit {
                 &amount_var,
                 &owner_x_var,
                 &owner_y_var,
-                &nullifier_var,
                 &expected_ciphertexts,
             )?;
         }
@@ -195,12 +188,12 @@ pub fn setup<R: Rng + CryptoRng>(
     let output = OpenCommitment::generate(rng, 0, 0, keypair.public);
 
     let audit = if is_audit {
-        // Field-element encryption format: ephemeral_pk (64 bytes) + ciphertexts (4 × 32 bytes)
-        // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+        // Field-element encryption format: ephemeral_pk (64 bytes) + ciphertexts (3 × 32 bytes)
+        // 3 field elements: [asset_amount_packed, owner_x, owner_y]
         // asset and amount are packed together: asset * 2^128 + amount
         Some(AuditCircuit {
             auditor: keypair.public,
-            memo: vec![0u8; 192],
+            memo: vec![0u8; 160],
             share: Fr::from(0u64),
         })
     } else {
@@ -208,7 +201,6 @@ pub fn setup<R: Rng + CryptoRng>(
     };
 
     let dummy_circuit = DepositCircuit {
-        keypair,
         asset: 1,
         amount: 1,
         output,
@@ -295,7 +287,6 @@ mod tests {
 
         // Create circuit
         let circuit = DepositCircuit {
-            keypair,
             asset,
             amount,
             output,
@@ -322,9 +313,7 @@ mod tests {
 
         // Create output
         let output = OpenCommitment::generate(rng, asset, amount, keypair.public);
-        let (memo, share) = output
-            .audit_encrypt(rng, &keypair, &auditor.public)
-            .unwrap();
+        let (memo, share) = output.audit_encrypt(rng, &auditor.public).unwrap();
 
         // Setup with audit
         let (pk, vk) = setup(true, rng).unwrap();
@@ -345,7 +334,6 @@ mod tests {
 
         // Create circuit
         let circuit = DepositCircuit {
-            keypair,
             asset,
             amount,
             output,

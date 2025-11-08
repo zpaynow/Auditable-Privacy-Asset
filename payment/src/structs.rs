@@ -144,42 +144,35 @@ impl OpenCommitment {
     /// Encrypt audit data using field-element-based encryption (circuit-compatible)
     ///
     /// Returns: (ciphertext_bytes, ephemeral_secret_fr)
-    /// Ciphertext format: ephemeral_pk (32 bytes) || ciphertexts (4 × 32 bytes = 128 bytes)
-    /// Field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+    /// Ciphertext format: ephemeral_pk (64 bytes) || ciphertexts (3 × 32 bytes = 96 bytes)
+    /// Field elements: [asset_amount_packed, owner_x, owner_y]
     pub fn audit_encrypt<R: CryptoRng + Rng>(
         &self,
         prng: &mut R,
-        keypair: &Keypair,
         auditor: &PublicKey,
     ) -> Result<(Vec<u8>, Fr)> {
         // Pack asset and amount into single field element (192 bits < 254 bits)
         let asset_amount_packed = pack_asset_amount(self.asset, self.amount);
         let owner_x_fr = self.owner.x;
         let owner_y_fr = self.owner.y;
-        let nullifier = self.nullify(keypair);
 
-        let field_elements = vec![asset_amount_packed, owner_x_fr, owner_y_fr, nullifier];
+        let field_elements = vec![asset_amount_packed, owner_x_fr, owner_y_fr];
 
         audit_encrypt_field_elements(prng, auditor, &field_elements)
     }
 
     /// Decrypt audit data using field-element-based decryption (circuit-compatible)
-    pub fn audit_decrypt(
-        auditor: &Keypair,
-        _comm: &Commitment,
-        bytes: &[u8],
-    ) -> Result<(Self, Fr)> {
-        // Decrypt field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+    pub fn audit_decrypt(auditor: &Keypair, _comm: &Commitment, bytes: &[u8]) -> Result<Self> {
+        // Decrypt field elements: [asset_amount_packed, owner_x, owner_y]
         let field_elements = audit_decrypt_field_elements(auditor, bytes)?;
 
-        if field_elements.len() != 4 {
+        if field_elements.len() != 3 {
             return Err(AzError::Decryption);
         }
 
         let asset_amount_packed = field_elements[0];
         let owner_x = field_elements[1];
         let owner_y = field_elements[2];
-        let nullifier = field_elements[3];
 
         // Unpack asset and amount from single field element
         let (asset, amount) = unpack_asset_amount(asset_amount_packed);
@@ -194,7 +187,7 @@ impl OpenCommitment {
             },
         };
 
-        Ok((open_comm, nullifier))
+        Ok(open_comm)
     }
 }
 
@@ -547,16 +540,11 @@ mod tests {
 
         let open_comm = OpenCommitment::generate(rng, asset, amount, keypair.public);
         let comm = open_comm.commit();
-        let nullifier = open_comm.nullify(&keypair);
-        let (memo, _) = open_comm
-            .audit_encrypt(rng, &keypair, &auditor.public)
-            .unwrap();
+        let (memo, _) = open_comm.audit_encrypt(rng, &auditor.public).unwrap();
 
-        let (open_comm2, nullifier2) =
-            OpenCommitment::audit_decrypt(&auditor, &comm, &memo).unwrap();
+        let open_comm2 = OpenCommitment::audit_decrypt(&auditor, &comm, &memo).unwrap();
         assert_eq!(open_comm.asset, open_comm2.asset);
         assert_eq!(open_comm.amount, open_comm2.amount);
         assert_eq!(open_comm.owner, open_comm2.owner);
-        assert_eq!(nullifier, nullifier2);
     }
 }

@@ -283,7 +283,7 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
             let auditor_pk_y_var = FpVar::new_input(cs.clone(), || Ok(audit.auditor.y))?;
 
             // Prove encryption for each output
-            for (i, output) in self.outputs.iter().enumerate() {
+            for i in 0..self.outputs.len() {
                 let memo_bytes = &audit.memos[i];
                 let (asset_var, amount_var, owner_x_var, owner_y_var, _comm_var) = &audit_used[i];
 
@@ -304,15 +304,9 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
                 // Prove keypair relationship: pk = sk * G
                 keypair_gadget(&ephemeral_sk_var, &ephemeral_pk_x_var, &ephemeral_pk_y_var)?;
 
-                // Compute nullifier for this output
-                // FIXME let nullifier_var = nullifier_gadget(&comm_var, &sk_var)?;
-
-                let nullifier = output.commitment.nullify(&self.keypair);
-                let nullifier_var = FpVar::new_witness(cs.clone(), || Ok(nullifier))?;
-
                 // Extract ciphertexts from memo bytes
-                // Format: ephemeral_pk (64 bytes) || ciphertexts (4 × 32 bytes)
-                // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+                // Format: ephemeral_pk (64 bytes) || ciphertexts (3 × 32 bytes)
+                // 3 field elements: [asset_amount_packed, owner_x, owner_y]
                 let mut expected_ciphertexts = Vec::new();
                 for bytes in memo_bytes[64..].chunks(32) {
                     // skip pk
@@ -331,7 +325,6 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
                     &amount_var,
                     &owner_x_var,
                     &owner_y_var,
-                    &nullifier_var,
                     &expected_ciphertexts,
                 )?;
             }

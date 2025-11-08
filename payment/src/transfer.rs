@@ -63,10 +63,10 @@ pub fn setup<R: Rng + CryptoRng>(
     }
 
     let audit = if is_audit {
-        // Field-element encryption format: ephemeral_pk (64 bytes) + ciphertexts (4 × 32 bytes)
-        // 4 field elements: [asset_amount_packed, owner_x, owner_y, nullifier]
+        // Field-element encryption format: ephemeral_pk (64 bytes) + ciphertexts (3 × 32 bytes)
+        // 3 field elements: [asset_amount_packed, owner_x, owner_y]
         // asset and amount are packed together: asset * 2^128 + amount
-        let memos = vec![vec![0u8; 192]; num_outputs]; // 64 + 4*32 = 192 bytes
+        let memos = vec![vec![0u8; 160]; num_outputs]; // 64 + 3*32 = 160 bytes
         let shares = vec![Fr::from(0u64); num_outputs];
         Some(AuditCircuit {
             auditor: keypair.public,
@@ -287,9 +287,7 @@ mod tests {
         let mut audit_shares = vec![];
         for _ in 0..3 {
             let commitment = OpenCommitment::generate(rng, asset, amount2, keypair.public);
-            let (memo, share) = commitment
-                .audit_encrypt(rng, &keypair, &auditor.public)
-                .unwrap();
+            let (memo, share) = commitment.audit_encrypt(rng, &auditor.public).unwrap();
             outputs.push(UtxoOutput { commitment });
             audit_memos.push(memo);
             audit_shares.push(share);
