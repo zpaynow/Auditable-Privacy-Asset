@@ -9,6 +9,12 @@ pub fn nullifier_gadget(comm: &FpVar<Fr>, sk: &FpVar<Fr>) -> Result<FpVar<Fr>, S
     poseidon_hash_gadget(&[comm.clone(), sk.clone()])
 }
 
+/// Circuit gadget for computing freezer
+/// Nullifier = Poseidon(comm)
+pub fn freezer_gadget(comm: &FpVar<Fr>) -> Result<FpVar<Fr>, SynthesisError> {
+    poseidon_hash_gadget(&[comm.clone()])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

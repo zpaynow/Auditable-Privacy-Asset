@@ -1,7 +1,10 @@
 use crate::{
-    Keypair, MTProof, OpenCommitment, PublicKey, audit_gadget::audit_encrypt_gadget,
-    commitment::commitment_gadget, keys::keypair_gadget, merkle_tree::merkle_proof_gadget,
-    nullifier::nullifier_gadget,
+    Keypair, MTProof, OpenCommitment, PublicKey,
+    audit_gadget::audit_encrypt_gadget,
+    commitment::commitment_gadget,
+    keys::keypair_gadget,
+    merkle_tree::merkle_proof_gadget,
+    nullifier::{freezer_gadget, nullifier_gadget},
 };
 use ark_bn254::Fr;
 use ark_r1cs_std::{
@@ -39,6 +42,7 @@ pub struct AuditCircuit {
 #[derive(Clone, Debug)]
 pub struct Utxo {
     pub nullifiers: Vec<Fr>,
+    pub freezers: Vec<Fr>,
     pub commitments: Vec<Fr>,
     pub memos: Vec<Vec<u8>>,
     pub merkle_version: u32,
@@ -62,6 +66,11 @@ impl UtxoCircuit {
             .inputs
             .iter()
             .map(|input| input.commitment.nullify(&self.keypair))
+            .collect();
+        let freezers = self
+            .inputs
+            .iter()
+            .map(|input| input.commitment.freeze())
             .collect();
         let commitments = self
             .outputs
@@ -88,6 +97,7 @@ impl UtxoCircuit {
 
         Ok(Utxo {
             nullifiers,
+            freezers,
             commitments,
             memos,
             merkle_version,
@@ -104,6 +114,11 @@ impl UtxoCircuit {
             .inputs
             .iter()
             .map(|input| input.commitment.nullify(&self.keypair))
+            .collect();
+        let freezers = self
+            .inputs
+            .iter()
+            .map(|input| input.commitment.freeze())
             .collect();
         let commitments = self
             .outputs
@@ -125,6 +140,7 @@ impl UtxoCircuit {
 
         Utxo {
             nullifiers,
+            freezers,
             commitments,
             merkle_root,
             merkle_version,
@@ -154,6 +170,12 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
         // Allocate public inputs
         let nullifiers_vars: Vec<FpVar<Fr>> = utxo
             .nullifiers
+            .iter()
+            .map(|n| FpVar::new_input(cs.clone(), || Ok(*n)))
+            .collect::<Result<_, _>>()?;
+
+        let freezers_vars: Vec<FpVar<Fr>> = utxo
+            .freezers
             .iter()
             .map(|n| FpVar::new_input(cs.clone(), || Ok(*n)))
             .collect::<Result<_, _>>()?;
@@ -199,11 +221,15 @@ impl ConstraintSynthesizer<Fr> for UtxoCircuit {
                 &pk_y_fq_var,
             )?;
 
-            // 3. Compute and verify nullifier
+            // 3.1 Compute and verify nullifier
             let computed_nullifier = nullifier_gadget(&computed_commitment, &sk_var)?;
 
-            // Verify nullifier matches public input
+            // 3.2 Compute and verify freezer
+            let computed_freezer = freezer_gadget(&computed_commitment)?;
+
+            // Verify nullifier/freezer matches public input
             computed_nullifier.enforce_equal(&nullifiers_vars[i])?;
+            computed_freezer.enforce_equal(&freezers_vars[i])?;
 
             // Verify Merkle tree membership
             let commitment_hash = comm.commit();

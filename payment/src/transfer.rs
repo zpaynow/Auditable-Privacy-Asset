@@ -102,6 +102,7 @@ pub fn prove<R: Rng + CryptoRng>(
 /// Verify a Groth16 proof for a UTXO transaction
 pub fn verify(vk: &VerifyingKey, utxo: &Utxo, proof: &Proof) -> crate::Result<()> {
     let mut publics = utxo.nullifiers.clone();
+    publics.extend(&utxo.freezers);
     publics.extend(&utxo.commitments);
     publics.push(utxo.merkle_root);
 

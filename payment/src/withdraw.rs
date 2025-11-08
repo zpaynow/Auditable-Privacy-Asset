@@ -3,7 +3,7 @@ use crate::{
     commitment::commitment_gadget,
     keys::keypair_gadget,
     merkle_tree::merkle_proof_gadget,
-    nullifier::nullifier_gadget,
+    nullifier::{freezer_gadget, nullifier_gadget},
     transfer::{Proof, ProvingKey, VerifyingKey},
 };
 use ark_bn254::{Bn254, Fr};
@@ -30,6 +30,7 @@ pub struct Withdraw {
     pub asset: Asset,
     pub amount: Amount,
     pub nullifier: Nullifier,
+    pub freezer: Nullifier,
     pub merkle_version: u32,
     pub merkle_root: Fr,
 }
@@ -38,9 +39,11 @@ impl WithdrawCircuit {
     /// generate public inputs/withdraw
     pub(crate) fn withdraw(&self) -> Withdraw {
         let nullifier = self.input.nullify(&self.keypair);
+        let freezer = self.input.freeze();
 
         Withdraw {
             nullifier,
+            freezer,
             asset: self.asset,
             amount: self.amount,
             merkle_version: self.merkle_proof.version,
@@ -57,6 +60,7 @@ impl ConstraintSynthesizer<Fr> for WithdrawCircuit {
         let asset_var = FpVar::new_input(cs.clone(), || Ok(Fr::from(utxo.asset)))?;
         let amount_var = FpVar::new_input(cs.clone(), || Ok(Fr::from(utxo.amount)))?;
         let nullifier_var = FpVar::new_input(cs.clone(), || Ok(utxo.nullifier))?;
+        let freezer_var = FpVar::new_input(cs.clone(), || Ok(utxo.freezer))?;
         let merkle_root_var = FpVar::new_input(cs.clone(), || Ok(utxo.merkle_root))?;
 
         // Allocate private witness data
@@ -82,11 +86,13 @@ impl ConstraintSynthesizer<Fr> for WithdrawCircuit {
             &pk_y_fq_var,
         )?;
 
-        // Compute and verify nullifier
+        // Compute and verify nullifier/freezer
         let computed_nullifier = nullifier_gadget(&computed_commitment, &sk_var)?;
+        let computed_freezer = freezer_gadget(&computed_commitment)?;
 
         // Verify nullifier matches public input
         computed_nullifier.enforce_equal(&nullifier_var)?;
+        computed_freezer.enforce_equal(&freezer_var)?;
 
         // Verify Merkle tree membership
         let commitment_hash = self.input.commit();
@@ -166,6 +172,7 @@ pub fn verify(vk: &VerifyingKey, utxo: &Withdraw, proof: &Proof) -> crate::Resul
     publics.push(Fr::from(utxo.asset));
     publics.push(Fr::from(utxo.amount));
     publics.push(utxo.nullifier);
+    publics.push(utxo.freezer);
     publics.push(utxo.merkle_root);
 
     let res = Groth16::<Bn254>::verify(vk, &publics, proof).map_err(|_| AzError::Groth16Verify)?;

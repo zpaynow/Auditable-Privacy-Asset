@@ -100,6 +100,10 @@ impl OpenCommitment {
         poseidon_hash(&[self.commit(), keypair.secret_to_fq()])
     }
 
+    pub fn freeze(&self) -> Nullifier {
+        poseidon_hash(&[self.commit()])
+    }
+
     /// encrypt the memo for receiver
     pub fn memo_encrypt<R: CryptoRng + Rng>(&self, prng: &mut R) -> Result<Vec<u8>> {
         let mut ptext = vec![];
