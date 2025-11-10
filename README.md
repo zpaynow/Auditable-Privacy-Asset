@@ -15,3 +15,7 @@ We want to build an auditable privacy asset standard protocol here.
 
 
 *In progress...*
+
+Guess what this is? Interested? Come chat!
+
+![APP](./app.jpg)
